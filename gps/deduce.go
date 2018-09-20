@@ -5,6 +5,7 @@
 package gps
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -871,9 +872,12 @@ func getMetadata(ctx context.Context, path, scheme string) (string, string, stri
 	}
 	defer rc.Close()
 
-	imports, err := parseMetaGoImports(rc)
+	buf := new(bytes.Buffer)
+	tee := io.TeeReader(rc, buf)
+
+	imports, err := parseMetaGoImports(tee)
 	if err != nil {
-		return "", "", "", errors.Wrapf(err, "unable to parse go-import metadata")
+		return "", "", "", errors.Wrapf(err, "unable to parse go-import metadata:\n%s", buf.String())
 	}
 	match := -1
 	for i, im := range imports {
@@ -881,12 +885,13 @@ func getMetadata(ctx context.Context, path, scheme string) (string, string, stri
 			continue
 		}
 		if match != -1 {
-			return "", "", "", errors.Errorf("multiple meta tags match import path %q", path)
+			return "", "", "", errors.Errorf("multiple meta tags match import path %q.\n%s", path, buf.String())
 		}
 		match = i
 	}
 	if match == -1 {
-		return "", "", "", errors.Errorf("go-import metadata not found")
+		return "", "", "", errors.Errorf("go-import metadata not found:\n%s", buf.String())
 	}
 	return imports[match].Prefix, imports[match].VCS, imports[match].RepoRoot, nil
 }
+
